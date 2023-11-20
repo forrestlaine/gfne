@@ -1,0 +1,73 @@
+function [c_xval,...
+            c_uval,...
+            c_devval,...
+            c_lamval,...
+            c_muval,...
+            c_psival,...
+            c_slackval,...
+            c_gamval] = extract_search_point(xval,...
+                                            uval,...
+                                            devval,...
+                                            lamval,...
+                                            muval,...
+                                            psival,...
+                                            slackval,...
+                                            gamval,...
+                                            deltas,...
+                                            alpha,...
+                                            alpha_primal,...
+                                            alpha_dual,...
+                                            params,...
+                                            restoration,...
+                                            evaluators,...
+                                            T, N)
+    c_xval{1} = xval{1}+alpha*alpha_primal{1}*deltas.dX{1};
+    for t = 1:T
+        for i = 1:N
+            c_uval{t,i} = uval{t,i}+alpha*alpha_primal{i}*deltas.dU{t,i};
+            c_devval{t,i} = devval{t,i}+alpha*alpha_primal{i}*deltas.dD{t,i};
+            c_lamval{t,i} = lamval{t,i}+alpha*alpha_dual{i}*(deltas.dL{t+1,i}-lamval{t,i});
+            c_muval{t,i} = muval{t,i}+alpha*alpha_dual{i}*(deltas.dM{t,i}-muval{t,i}); 
+    %                     if t<T
+            c_psival{t,i} = psival{t,i}+alpha*alpha_dual{i}*(deltas.dP{t,i}-psival{t,i});
+    %                     end
+            if params.feasible || restoration
+                c_slackval{t,i} = max(full(evaluators.eval_ineq_constraint{t,i}([c_xval{t};c_uval{t,i}])),params.slack_min);
+            else
+                c_slackval{t,i} = slackval{t,i}+alpha*alpha_primal{i}*deltas.dS{t,i};
+            end
+            if restoration 
+                c_gamval{t,i} = params.tauval_tolerance./c_slackval{t,i};
+            else
+                c_gamval{t,i} = gamval{t,i}+alpha*alpha_dual{i}*(deltas.dG{t,i}-gamval{t,i});
+            end
+
+            if any(c_gamval{t,i} < 0) || any(c_slackval{t,i} < 0)
+                c_gamval{t,i} = max(0.01,c_gamval{t,i});
+                c_slackval{t,i} = max(0.01,c_slackval{t,i});
+                disp('Warning! Correcting negative slacks or mults');
+            end
+        end
+        c_xval{t+1} = xval{t+1}+alpha*alpha_primal{i}*deltas.dX{t+1};
+
+    end
+    for i = 1:N
+        c_muval{T+1,i} = muval{T+1,i}+alpha*alpha_dual{i}*(deltas.dM{T+1,i}-muval{T+1,i});
+
+        if params.feasible || restoration
+            c_slackval{T+1,i} = max(full(evaluators.eval_ineq_constraint{T+1,i}(c_xval{T+1})),params.slack_min);
+        else
+            c_slackval{T+1,i} = slackval{T+1,i}+alpha*alpha_primal{i}*deltas.dS{T+1,i};
+        end
+        if restoration
+            c_gamval{T+1,i} = params.tauval_tolerance./c_slackval{T+1,i};
+        else
+            c_gamval{T+1,i} = gamval{T+1,i}+alpha*alpha_dual{i}*(deltas.dG{T+1,i}-gamval{T+1,i});
+        end
+        if any(c_gamval{T+1,i} < 0) || any(c_slackval{T+1,i} < 0)
+            c_gamval{T+1,i} = max(0.01,c_gamval{T+1,i});
+            c_slackval{T+1,i} = max(0.01,c_slackval{T+1,i});
+            disp('Warning! Correcting negative slacks or mults');
+        end
+    end                                        
+end
